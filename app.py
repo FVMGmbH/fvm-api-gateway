@@ -3,6 +3,10 @@ from pydantic import BaseModel
 import google.generativeai as genai
 import os
 from typing import Optional
+from dotenv import load_dotenv
+
+# Environment Variables laden
+load_dotenv()
 
 # =====================================
 # KONFIGURATION
@@ -18,9 +22,14 @@ app = FastAPI(
 API_TOKEN = os.getenv("API_TOKEN")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# Gemini konfigurieren
+# Gemini konfigurieren (nur wenn Key vorhanden)
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
+else:
+    print("⚠️ WARNUNG: GOOGLE_API_KEY nicht gesetzt!")
+
+if not API_TOKEN:
+    print("⚠️ WARNUNG: API_TOKEN nicht gesetzt! API ist ungeschützt.")
 
 # =====================================
 # SICHERHEIT: TOKEN-PRÜFUNG
@@ -28,6 +37,10 @@ if GOOGLE_API_KEY:
 
 def verify_token(authorization: str = Header(None)):
     """Prüft ob der API-Token gültig ist"""
+    if not API_TOKEN:
+        # Wenn kein Token konfiguriert ist, erlaube Zugriff (nur für Entwicklung!)
+        return True
+    
     if not authorization:
         raise HTTPException(
             status_code=401, 
@@ -68,11 +81,12 @@ class GeminiResponse(BaseModel):
 def root():
     """Willkommens-Endpunkt"""
     return {
-        "message": "FVM GmbH API Gateway ist online! \ud83d\ude80",
+        "message": "FVM GmbH API Gateway ist online! 🚀",
         "version": "1.0.0",
         "endpoints": [
             "/api/gemini - KI-Textgenerierung",
-            "/health - Status-Check"
+            "/health - Status-Check",
+            "/docs - API-Dokumentation"
         ]
     }
 
@@ -97,6 +111,12 @@ async def generate_text(
     - Authorization Header mit Bearer Token
     - JSON Body mit 'prompt'
     """
+    if not GOOGLE_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="Google API Key nicht konfiguriert. Bitte GOOGLE_API_KEY in .env setzen."
+        )
+    
     try:
         # Gemini-Modell initialisieren
         model = genai.GenerativeModel('gemini-pro')
@@ -147,7 +167,7 @@ async def test_sheets_connection(token_valid: bool = Depends(verify_token)):
 async def not_found_handler(request, exc):
     return {
         "error": "Endpunkt nicht gefunden",
-        "verfügbare_endpunkte": ["/", "/health", "/api/gemini"]
+        "verfügbare_endpunkte": ["/", "/health", "/api/gemini", "/docs"]
     }
 
 # =====================================
@@ -156,4 +176,7 @@ async def not_found_handler(request, exc):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    print(f"\n🚀 Server startet auf http://localhost:{port}")
+    print(f"📖 API-Docs: http://localhost:{port}/docs\n")
+    uvicorn.run(app, host="0.0.0.0", port=port)
